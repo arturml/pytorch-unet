@@ -7,43 +7,53 @@ class conv_block(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, 3, padding=1)
         self.batch_norm = nn.BatchNorm2d(out_channels)
+        self.leaky_relu = nn.LeakyReLU(0.01)
 
     def forward(self, x):
         x = self.conv(x)
         x = self.batch_norm(x)
-        return F.relu(x)
+        x = self.leaky_relu(x)
+        return x
 
 class UNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.down1 = nn.Sequential(
-            conv_block(3, 16),
-            conv_block(16, 16)
-        )
-        self.down2 = nn.Sequential(
-            conv_block(16, 32),
+            conv_block(3, 32),
             conv_block(32, 32)
         )
-        self.down3 = nn.Sequential(
+        self.down2 = nn.Sequential(
             conv_block(32, 64),
             conv_block(64, 64)
         )
+        self.down3 = nn.Sequential(
+            conv_block(64, 128),
+            conv_block(128, 128)
+        )
+        self.down4 = nn.Sequential(
+            conv_block(128, 256),
+            conv_block(256, 256)
+        )
 
-        self.middle = conv_block(64, 64)
+        self.middle = conv_block(256,256)
+
+        self.up4 = nn.Sequential(
+            conv_block(512, 512),
+            conv_block(512, 128)
+        )
 
         self.up3 = nn.Sequential(
-            conv_block(128, 128),
-            conv_block(128, 32)
+            conv_block(256, 256),
+            conv_block(256, 64)
         )
 
         self.up2 = nn.Sequential(
-            conv_block(64, 64),
-            conv_block(64, 16)
+            conv_block(128, 128),
+            conv_block(128, 32)
         )
-
         self.up1 = nn.Sequential(
-            conv_block(32, 32),
-            conv_block(32, 1)
+            conv_block(64, 64),
+            conv_block(64, 1)
         )
 
     def forward(self,  x):
@@ -56,7 +66,14 @@ class UNet(nn.Module):
         down3 = self.down3(out)
         out = F.max_pool2d(down3, 2)
 
+        down4 = self.down4(out)
+        out = F.max_pool2d(down4, 2)
+
         out = self.middle(out)
+
+        out = F.upsample(out, scale_factor=2)
+        out = torch.cat([down4, out], 1)
+        out = self.up4(out)
 
         out = F.upsample(out, scale_factor=2)
         out = torch.cat([down3, out], 1)
@@ -69,6 +86,7 @@ class UNet(nn.Module):
         out = F.upsample(out, scale_factor=2)
         out = torch.cat([down1, out], 1)
         out = self.up1(out)
+
         out = F.sigmoid(out)
 
         return out
